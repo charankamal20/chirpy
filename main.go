@@ -12,7 +12,9 @@ func main() {
 		Addr:    ":8080",
 	}
 
-	server.ListenAndServe()
+	ServeMux.Handle("/", http.FileServer(
+		http.Dir("./"),
+	))
 
-	
+	server.ListenAndServe()
 }
