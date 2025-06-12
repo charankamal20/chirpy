@@ -1,15 +1,45 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"sync/atomic"
 )
+
+type apiConfig struct {
+	fileServerHits atomic.Int32
+}
+
+func (c *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c.fileServerHits.Add(1)
+		fmt.Println("File server hit count incremented:", c.fileServerHits.Load())
+		next.ServeHTTP(w, r)
+	})
+}
 
 func healthCheckHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Write([]byte("OK"))
+	}
+}
+
+func (c *apiConfig) getFileServerHitsHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		hits := c.fileServerHits.Load()
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write(fmt.Appendf(nil, "Hits: %d", hits))
+	}
+}
+
+func (c *apiConfig) resetHitsHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c.fileServerHits.Swap(0)
+		w.WriteHeader(http.StatusOK)
 	}
 }
 
@@ -21,12 +51,18 @@ func main() {
 		Handler: ServeMux,
 		Addr:    port,
 	}
+	api := &apiConfig{}
 
-	ServeMux.Handle("/app/", http.StripPrefix("/app/", http.FileServer(
+	fileHandler := http.FileServer(
 		http.Dir("./"),
-	)))
+	)
+	ServeMux.Handle("/app/", http.StripPrefix("/app/", api.middlewareMetricsInc(fileHandler)))
 
-	ServeMux.HandleFunc("/healthz", healthCheckHandler())
+	ServeMux.HandleFunc("GET /healthz", healthCheckHandler())
+
+	ServeMux.HandleFunc("GET /metrics", api.getFileServerHitsHandler())
+
+	ServeMux.HandleFunc("POST /reset", api.resetHitsHandler())
 
 	log.Println("Starting server on", port)
 	err := server.ListenAndServe()
