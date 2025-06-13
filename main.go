@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sync/atomic"
 )
 
@@ -31,8 +32,11 @@ func (c *apiConfig) getFileServerHitsHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hits := c.fileServerHits.Load()
 		w.WriteHeader(http.StatusOK)
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Write(fmt.Appendf(nil, "Hits: %d", hits))
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+		data, _ := os.ReadFile("./admin/metrics/index.html")
+
+		w.Write(fmt.Appendf(nil, string(data), hits))
 	}
 }
 
@@ -58,11 +62,11 @@ func main() {
 	)
 	ServeMux.Handle("/app/", http.StripPrefix("/app/", api.middlewareMetricsInc(fileHandler)))
 
-	ServeMux.HandleFunc("GET /healthz", healthCheckHandler())
+	ServeMux.HandleFunc("GET /api/healthz", healthCheckHandler())
 
-	ServeMux.HandleFunc("GET /metrics", api.getFileServerHitsHandler())
+	ServeMux.HandleFunc("GET /api/metrics", api.getFileServerHitsHandler())
 
-	ServeMux.HandleFunc("POST /reset", api.resetHitsHandler())
+	ServeMux.HandleFunc("POST /api/reset", api.resetHitsHandler())
 
 	log.Println("Starting server on", port)
 	err := server.ListenAndServe()
