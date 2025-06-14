@@ -32,7 +32,7 @@ func (c *apiConfig) getFileServerHitsHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hits := c.fileServerHits.Load()
 		w.WriteHeader(http.StatusOK)
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Type", "text/html")
 
 		data, _ := os.ReadFile("./admin/metrics/index.html")
 
@@ -64,9 +64,9 @@ func main() {
 
 	ServeMux.HandleFunc("GET /api/healthz", healthCheckHandler())
 
-	ServeMux.HandleFunc("GET /api/metrics", api.getFileServerHitsHandler())
+	ServeMux.HandleFunc("GET /admin/metrics", api.getFileServerHitsHandler())
 
-	ServeMux.HandleFunc("POST /api/reset", api.resetHitsHandler())
+	ServeMux.HandleFunc("POST /admin/reset", api.resetHitsHandler())
 
 	log.Println("Starting server on", port)
 	err := server.ListenAndServe()
