@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -47,6 +48,47 @@ func (c *apiConfig) resetHitsHandler() http.HandlerFunc {
 	}
 }
 
+func validateChirpHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+
+		type req struct {
+			Body string `json:"body" validate:"required"`
+		}
+
+		type errorResponse struct {
+			Error string `json:"error"`
+		}
+
+		type successResponse struct {
+			Valid bool `json:"valid"`
+		}
+
+		// Set content-type early
+		w.Header().Set("Content-Type", "application/json")
+
+		// Decode request
+		var request req
+		decoder := json.NewDecoder(r.Body)
+		err := decoder.Decode(&request)
+		if err != nil || request.Body == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(errorResponse{Error: "Something went wrong"})
+			return
+		}
+		// Validate chirp length
+		if len(request.Body) > 140 {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(errorResponse{Error: "Chirp is too long"})
+			return
+		}
+
+		// Valid chirp
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(successResponse{Valid: true})
+	}
+}
+
 func main() {
 	ServeMux := http.NewServeMux()
 
@@ -67,6 +109,8 @@ func main() {
 	ServeMux.HandleFunc("GET /admin/metrics", api.getFileServerHitsHandler())
 
 	ServeMux.HandleFunc("POST /admin/reset", api.resetHitsHandler())
+
+	ServeMux.HandleFunc("POST /api/validate_chirp", validateChirpHandler())
 
 	log.Println("Starting server on", port)
 	err := server.ListenAndServe()
