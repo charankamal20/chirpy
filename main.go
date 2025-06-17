@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync/atomic"
 )
 
@@ -61,7 +62,7 @@ func validateChirpHandler() http.HandlerFunc {
 		}
 
 		type successResponse struct {
-			Valid bool `json:"valid"`
+			CleanedOutput string `json:"cleaned_body,omitempty"`
 		}
 
 		// Set content-type early
@@ -83,9 +84,15 @@ func validateChirpHandler() http.HandlerFunc {
 			return
 		}
 
+		var profaneWords = []string{" kerfuffle ", " sharbert ", " fornax ", " Kerfuffle ", " Sharbert ", " Fornax "}
+
+		for _, word := range profaneWords {
+			request.Body = strings.ReplaceAll(request.Body, word, " **** ")
+		}
+
 		// Valid chirp
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(successResponse{Valid: true})
+		json.NewEncoder(w).Encode(successResponse{CleanedOutput: request.Body})
 	}
 }
 
