@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -8,9 +9,13 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/charankamal20/chirpy/internal/database"
+	_ "github.com/lib/pq"
 )
 
 type apiConfig struct {
+	db             *database.Queries
 	fileServerHits atomic.Int32
 }
 
@@ -97,6 +102,21 @@ func validateChirpHandler() http.HandlerFunc {
 }
 
 func main() {
+
+	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		panic("DB_URL environment variable is not set")
+	}
+
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to connect to database: %v", err))
+	}
+
+	defer db.Close()
+
+	dbqueries := database.New(db)
+
 	ServeMux := http.NewServeMux()
 
 	port := ":8080"
@@ -104,7 +124,9 @@ func main() {
 		Handler: ServeMux,
 		Addr:    port,
 	}
-	api := &apiConfig{}
+	api := &apiConfig{
+		db: dbqueries,
+	}
 
 	fileHandler := http.FileServer(
 		http.Dir("./"),
@@ -120,7 +142,7 @@ func main() {
 	ServeMux.HandleFunc("POST /api/validate_chirp", validateChirpHandler())
 
 	log.Println("Starting server on", port)
-	err := server.ListenAndServe()
+	err = server.ListenAndServe()
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
