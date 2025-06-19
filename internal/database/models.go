@@ -17,8 +17,9 @@ type Chirp struct {
 }
 
 type User struct {
-	ID        string
-	Email     string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID             string
+	Email          string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	HashedPassword string
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/charankamal20/chirpy/internal/auth"
 	"github.com/charankamal20/chirpy/internal/database"
 	"github.com/charankamal20/chirpy/internal/dto"
 	_ "github.com/lib/pq"
@@ -19,6 +20,7 @@ type apiConfig struct {
 	platform       string
 	db             *database.Queries
 	fileServerHits atomic.Int32
+	auth           *auth.Auth
 }
 
 func (c *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -126,19 +128,29 @@ func (c *apiConfig) getUserFromEmailHandler() http.HandlerFunc {
 func (c *apiConfig) createUserHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		type userRequest struct {
-			Email string `json:"email" validate:"required,email"`
+			Email    string `json:"email" validate:"required,email"`
+			Password string `json:"password" validate:"required"`
 		}
 
 		var request userRequest
 		decoder := json.NewDecoder(r.Body)
 		err := decoder.Decode(&request)
-		if err != nil || request.Email == "" {
+		if err != nil || request.Email == "" || request.Password == "" {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request"})
 			return
 		}
 
-		user, err := c.db.CreateUser(r.Context(), request.Email)
+		request.Password, err = c.auth.HashPassword(request.Password)
+		if err != nil {
+			http.Error(w, "Failed to create user", http.StatusInternalServerError)
+			return
+		}
+
+		user, err := c.db.CreateUser(r.Context(), database.CreateUserParams{
+			Email:          request.Email,
+			HashedPassword: request.Password,
+		})
 		if err != nil {
 			http.Error(w, "Failed to create user", http.StatusInternalServerError)
 			return
@@ -179,6 +191,96 @@ func (c *apiConfig) addChirpHandler() http.HandlerFunc {
 	}
 }
 
+func (c *apiConfig) getAllChirpsHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		chirps, err := c.db.GetAllChirps(r.Context())
+		if err != nil {
+			http.Error(w, "Could not fetch chirps", http.StatusInternalServerError)
+			return
+		}
+
+		chirpsDto := make([]dto.ChirpDTO, 0)
+		for _, chirp := range chirps {
+			chirpDto := dto.GetChirpDTO(&chirp)
+			chirpsDto = append(chirpsDto, *chirpDto)
+		}
+
+		data, err := json.Marshal(chirpsDto)
+		if err != nil {
+			http.Error(w, "Could not marshal chirps", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "applicaton/json")
+		w.Write(data)
+	}
+}
+
+func (c *apiConfig) getChirpHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("chirpID")
+		if id == "" {
+			http.Error(w, "id not found", http.StatusBadRequest)
+			return
+		}
+
+		chirp, err := c.db.GetChirp(r.Context(), id)
+		if err != nil {
+			http.Error(w, "some error occured", http.StatusInternalServerError)
+			return
+		}
+
+		chirpDto := dto.GetChirpDTO(&chirp)
+
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		err = json.NewEncoder(w).Encode(chirpDto)
+		if err != nil {
+			http.Error(w, "some error occured", http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
+func (a *apiConfig) loginHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		type userRequest struct {
+			Email    string `json:"email" validate:"required,email"`
+			Password string `json:"password" validate:"required"`
+		}
+
+		var request userRequest
+		decoder := json.NewDecoder(r.Body)
+		err := decoder.Decode(&request)
+		if err != nil || request.Email == "" || request.Password == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request"})
+			return
+		}
+
+		user, err := a.db.GetUserByEmail(r.Context(), request.Email)
+		if err != nil {
+			http.Error(w, "some error occured", http.StatusInternalServerError)
+			return
+		}
+
+		err = a.auth.CheckPasswordHash(user.HashedPassword, request.Password)
+		if err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		userDto := dto.GetUserDTOFromUser(&user)
+
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(userDto); err != nil {
+			http.Error(w, "Failed to encode user", http.StatusInternalServerError)
+		}
+	}
+}
+
 func main() {
 	platform := os.Getenv("PLATFORM")
 	if platform == "" {
@@ -207,9 +309,11 @@ func main() {
 		Addr:    port,
 	}
 
+	auth := &auth.Auth{}
 	api := &apiConfig{
 		db:       dbqueries,
 		platform: platform,
+		auth:     auth,
 	}
 
 	fileHandler := http.FileServer(
@@ -228,6 +332,12 @@ func main() {
 	ServeMux.HandleFunc("GET /api/user", api.getUserFromEmailHandler())
 
 	ServeMux.HandleFunc("POST /api/chirps", api.addChirpHandler())
+
+	ServeMux.HandleFunc("GET /api/chirps", api.getAllChirpsHandler())
+
+	ServeMux.HandleFunc("GET /api/chirps/{chirpID}", api.getChirpHandler())
+
+	ServeMux.HandleFunc("POST /api/login", api.loginHandler())
 
 	log.Println("Starting server on", port)
 	err = server.ListenAndServe()
