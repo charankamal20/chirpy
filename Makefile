@@ -1,16 +1,19 @@
+include .env
+export
+
 lint:
 	@go run golang.org/x/lint/golint ./...
 
 dbup:
 	cd sql/schema && \
-	goose postgres "postgres://postgres:postgres@localhost:5432/chirpy?sslmode=disable" up
+	goose postgres "$(DB_URL)" up
 
 dbdown:
 	cd sql/schema && \
-	goose postgres "postgres://postgres:postgres@localhost:5432/chirpy?sslmode=disable" down
+	goose postgres "$(DB_URL)" down
 
 gen_code:
-	@sqlc generate 
+	@sqlc generate
 
 build: lint
 	@go build -o bin/chirpy .
