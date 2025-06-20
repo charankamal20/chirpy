@@ -13,6 +13,7 @@ import (
 	"github.com/charankamal20/chirpy/internal/auth"
 	"github.com/charankamal20/chirpy/internal/database"
 	"github.com/charankamal20/chirpy/internal/dto"
+
 	_ "github.com/lib/pq"
 )
 
@@ -309,7 +310,7 @@ func main() {
 		Addr:    port,
 	}
 
-	auth := &auth.Auth{}
+	auth := &auth.CryptoAdapter{}
 	api := &apiConfig{
 		db:       dbqueries,
 		platform: platform,
