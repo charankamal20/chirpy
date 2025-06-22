@@ -21,7 +21,7 @@ type apiConfig struct {
 	platform       string
 	db             *database.Queries
 	fileServerHits atomic.Int32
-	auth           *auth.Auth
+	auth           auth.Auth
 }
 
 func (c *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -310,7 +310,7 @@ func main() {
 		Addr:    port,
 	}
 
-	auth := &auth.CryptoAdapter{}
+	auth := &auth.AuthAdapter{}
 	api := &apiConfig{
 		db:       dbqueries,
 		platform: platform,
@@ -320,6 +320,7 @@ func main() {
 	fileHandler := http.FileServer(
 		http.Dir("./"),
 	)
+
 	ServeMux.Handle("/app/", http.StripPrefix("/app/", api.middlewareMetricsInc(fileHandler)))
 
 	ServeMux.HandleFunc("GET /api/healthz", healthCheckHandler())
