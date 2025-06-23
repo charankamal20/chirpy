@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -9,10 +10,13 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/charankamal20/chirpy/internal/auth"
+	"github.com/charankamal20/chirpy/internal/cache"
 	"github.com/charankamal20/chirpy/internal/database"
 	"github.com/charankamal20/chirpy/internal/dto"
+	"github.com/google/uuid"
 
 	_ "github.com/lib/pq"
 )
@@ -69,24 +73,25 @@ func (c *apiConfig) resetHitsHandler() http.HandlerFunc {
 }
 
 type chirpReq struct {
-	Body   string `json:"body" validate:"required"`
-	UserID string `json:"user_id" validate:"required"`
+	Body string `json:"body" validate:"required"`
 }
 
-func validateChirpHandler(r *http.Request) (*chirpReq, int, error) {
+func validateChirpHandler(r *http.Request) (*chirpReq, string, int, error) {
 	type errorResponse struct {
 		Error string `json:"error"`
 	}
 
+	userid := (r.Context().Value("id").(uuid.UUID)).String()
+
 	var request chirpReq
 	decoder := json.NewDecoder(r.Body)
 	err := decoder.Decode(&request)
-	if err != nil || request.Body == "" || request.UserID == "" {
-		return nil, http.StatusBadRequest, fmt.Errorf("Invalid request body")
+	if err != nil || request.Body == "" || userid == "" {
+		return nil, "", http.StatusBadRequest, fmt.Errorf("Invalid request body")
 	}
 	// Validate chirp length
 	if len(request.Body) > 140 {
-		return nil, http.StatusBadRequest, fmt.Errorf("Chirp body exceeds 140 characters")
+		return nil, "", http.StatusBadRequest, fmt.Errorf("Chirp body exceeds 140 characters")
 	}
 
 	var profaneWords = []string{" kerfuffle ", " sharbert ", " fornax ", " Kerfuffle ", " Sharbert ", " Fornax "}
@@ -95,7 +100,7 @@ func validateChirpHandler(r *http.Request) (*chirpReq, int, error) {
 		request.Body = strings.ReplaceAll(request.Body, word, " **** ")
 	}
 
-	return &request, http.StatusOK, nil
+	return &request, userid, http.StatusOK, nil
 }
 
 func (c *apiConfig) getUserFromEmailHandler() http.HandlerFunc {
@@ -157,7 +162,7 @@ func (c *apiConfig) createUserHandler() http.HandlerFunc {
 			return
 		}
 
-		userDto := dto.GetUserDTOFromUser(&user)
+		userDto := dto.GetUserDTOFromUser(&user, "")
 
 		w.WriteHeader(http.StatusCreated)
 		w.Header().Set("Content-Type", "application/json")
@@ -169,7 +174,7 @@ func (c *apiConfig) createUserHandler() http.HandlerFunc {
 
 func (c *apiConfig) addChirpHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		data, status, err := validateChirpHandler(r)
+		data, userId, status, err := validateChirpHandler(r)
 		if err != nil {
 			http.Error(w, err.Error(), status)
 			return
@@ -177,7 +182,7 @@ func (c *apiConfig) addChirpHandler() http.HandlerFunc {
 
 		chirp, err := c.db.CreateChirp(r.Context(), database.CreateChirpParams{
 			Body:   data.Body,
-			UserID: data.UserID,
+			UserID: userId,
 		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -247,8 +252,9 @@ func (c *apiConfig) getChirpHandler() http.HandlerFunc {
 func (a *apiConfig) loginHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		type userRequest struct {
-			Email    string `json:"email" validate:"required,email"`
-			Password string `json:"password" validate:"required"`
+			Email            string `json:"email" validate:"required,email"`
+			Password         string `json:"password" validate:"required"`
+			ExpiresInSeconds int    `json:"expires_in_seconds"`
 		}
 
 		var request userRequest
@@ -258,6 +264,10 @@ func (a *apiConfig) loginHandler() http.HandlerFunc {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request"})
 			return
+		}
+
+		if request.ExpiresInSeconds <= 0 || request.ExpiresInSeconds > 3600 {
+			request.ExpiresInSeconds = 3600
 		}
 
 		user, err := a.db.GetUserByEmail(r.Context(), request.Email)
@@ -272,7 +282,9 @@ func (a *apiConfig) loginHandler() http.HandlerFunc {
 			return
 		}
 
-		userDto := dto.GetUserDTOFromUser(&user)
+		token, refresh_token, err := a.auth.MakeJWT(uuid.MustParse(user.ID), time.Duration(request.ExpiresInSeconds)*time.Second)
+
+		userDto := dto.GetUserDTOFromUser(&user, token, refresh_token)
 
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
@@ -280,6 +292,36 @@ func (a *apiConfig) loginHandler() http.HandlerFunc {
 			http.Error(w, "Failed to encode user", http.StatusInternalServerError)
 		}
 	}
+}
+
+func (a *apiConfig) autenticateUser(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, err := a.auth.GetBearerToken(r.Header)
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		userID, err := a.auth.ValidateJWT(token)
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, "id", userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
+}
+
+
+
+func (a *apiConfig) getRefreshTokenHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		type refreshTokenRequest struct {
+			RefreshToken string `
+
+		}
 }
 
 func main() {
@@ -291,6 +333,11 @@ func main() {
 	dbURL := os.Getenv("DB_URL")
 	if dbURL == "" {
 		panic("DB_URL environment variable is not set")
+	}
+
+	secret := os.Getenv("SECRET_KEY")
+	if secret == "" {
+		panic("SECRET environment variable is not set")
 	}
 
 	db, err := sql.Open("postgres", dbURL)
@@ -310,7 +357,14 @@ func main() {
 		Addr:    port,
 	}
 
-	auth := &auth.AuthAdapter{}
+	refresh_token_cache, err := cache.NewRefreshTokenCache()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to initialize refresh token cache: %v", err))
+	}
+
+	defer refresh_token_cache.Close()
+
+	auth := auth.NewAuthAdapter(secret, refresh_token_cache)
 	api := &apiConfig{
 		db:       dbqueries,
 		platform: platform,
@@ -333,7 +387,7 @@ func main() {
 
 	ServeMux.HandleFunc("GET /api/user", api.getUserFromEmailHandler())
 
-	ServeMux.HandleFunc("POST /api/chirps", api.addChirpHandler())
+	ServeMux.HandleFunc("POST /api/chirps", api.autenticateUser(api.addChirpHandler()))
 
 	ServeMux.HandleFunc("GET /api/chirps", api.getAllChirpsHandler())
 

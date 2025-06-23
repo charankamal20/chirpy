@@ -12,7 +12,7 @@ func TestJwtSigning(t *testing.T) {
 
 	userId := uuid.New()
 
-	token, err := adapter.MakeJWT(userId, "abcdefghijklmnopqrstuvwxyz", time.Hour*24)
+	token, err := adapter.MakeJWT(userId, time.Hour*24)
 	if err != nil {
 		t.Fatalf("Failed to create JWT: %v", err)
 	}
@@ -23,16 +23,15 @@ func TestJwtSigning(t *testing.T) {
 func Test_ValidateToken_ValidToken(t *testing.T) {
 	var adapter Auth = &AuthAdapter{}
 
-	key := "abcdefghijklmnopqrstuvwxyz"
 	userId := uuid.New()
 
-	token, err := adapter.MakeJWT(userId, key, time.Hour*24)
+	token, err := adapter.MakeJWT(userId, time.Hour*24)
 	if err != nil {
 		t.Fatalf("Failed to create JWT: %v", err)
 	}
 	t.Logf("Generated JWT: %s", token)
 
-	parsedUserId, err := adapter.ValidateJWT(token, key)
+	parsedUserId, err := adapter.ValidateJWT(token)
 	if err != nil {
 		t.Fatalf("Failed to validate JWT: %v", err)
 	}
