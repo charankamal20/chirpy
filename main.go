@@ -319,9 +319,11 @@ func (a *apiConfig) autenticateUser(next http.HandlerFunc) http.HandlerFunc {
 func (a *apiConfig) getRefreshTokenHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		type refreshTokenRequest struct {
-			RefreshToken string `
-
+			RefreshToken string `json:"refresh_token" validate:"required"`
 		}
+
+		
+	}
 }
 
 func main() {
