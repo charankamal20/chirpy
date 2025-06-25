@@ -14,10 +14,11 @@ import (
 type Auth interface {
 	HashPassword(password string) (string, error)
 	CheckPasswordHash(hash, password string) error
-	MakeJWT(userID uuid.UUID, expiresIn time.Duration) (string, string, error)
+	MakeNewJWT(userID uuid.UUID, expiresIn time.Duration) (string, string, error)
+	MakeJWT(uuid.UUID, string, time.Duration) (string, error)
 	ValidateJWT(tokenString string) (uuid.UUID, error)
-	ValidateRefreshToken(token string) (uuid.UUID, error)
 	GetBearerToken(headers http.Header) (string, error)
+	RefreshToken(token string) (string, error)
 }
 
 type AuthAdapter struct {
@@ -45,10 +46,22 @@ func (a *AuthAdapter) CheckPasswordHash(hash, password string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 }
 
-func (a *AuthAdapter) MakeJWT(userID uuid.UUID, expiresIn time.Duration) (string, string, error) {
+func (a *AuthAdapter) MakeNewJWT(userID uuid.UUID, expiresIn time.Duration) (string, string, error) {
 	refresh_token := uuid.NewString()
-	a.cache.StoreToken(refresh_token, userID.String(), time.Hour*24)
+	token, err := a.MakeJWT(userID, refresh_token, time.Hour)
+	if err != nil {
+		return "", "", err
+	}
 
+	err = a.cache.StoreToken(refresh_token, userID.String(), time.Hour*24)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to store refresh token: %w", err)
+	}
+
+	return token, refresh_token, err
+}
+
+func (a *AuthAdapter) MakeJWT(userID uuid.UUID, refresh_token string, expiresIn time.Duration) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		ID:        refresh_token,
 		Issuer:    "chirpy",
@@ -59,10 +72,10 @@ func (a *AuthAdapter) MakeJWT(userID uuid.UUID, expiresIn time.Duration) (string
 
 	tokenString, err := token.SignedString([]byte(a.secret))
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
-	return tokenString, refresh_token, nil
+	return tokenString, nil
 }
 
 func (a *AuthAdapter) ValidateJWT(tokenString string) (uuid.UUID, error) {
@@ -91,23 +104,18 @@ func (a *AuthAdapter) ValidateJWT(tokenString string) (uuid.UUID, error) {
 	return userID, nil
 }
 
-func (a *AuthAdapter) ValidateRefreshToken(token string) error {
-	claims, err := a.getTokenClaims(token)
-	if err != nil {
-		return err
-	}
-
+func (a *AuthAdapter) validateRefreshToken(claims jwt.RegisteredClaims) (uuid.UUID, error) {
 	refresh_token := claims.ID
 	if refresh_token == "" {
-		return fmt.Errorf("Token does not contain an ID")
+		return uuid.Nil, fmt.Errorf("Token does not contain an ID")
 	}
 
 	userId, err := a.cache.GetUserIDByToken(refresh_token)
 	if err != nil || userId == "" || userId != claims.Subject {
-		return fmt.Errorf("Invlaid Token: %w", err)
+		return uuid.Nil, fmt.Errorf("Invlaid Token: %w", err)
 	}
 
-	return nil
+	return uuid.MustParse(userId), nil
 }
 
 func (a *AuthAdapter) GetBearerToken(headers http.Header) (string, error) {
@@ -124,7 +132,7 @@ func (a *AuthAdapter) GetBearerToken(headers http.Header) (string, error) {
 	if token == "" {
 		return "", fmt.Errorf("Bearer token is empty")
 	}
-
+	fmt.Println("Bearer token: ", token)
 	return token, nil
 }
 
@@ -145,4 +153,29 @@ func (a *AuthAdapter) getTokenClaims(tokenString string) (jwt.RegisteredClaims, 
 	}
 
 	return *claims, nil
+}
+
+
+func (a *AuthAdapter) RefreshToken(token string) (string, error) {
+	claims, err := a.getTokenClaims(token)
+	if err != nil {
+		return "", err
+	}
+
+	userID, err := a.validateRefreshToken(claims)
+	if err != nil {
+		return "", fmt.Errorf("Invalid refresh token: %w", err)
+	}
+
+	refresh_token := claims.ID
+	if refresh_token == "" {
+		return "", fmt.Errorf("Token does not contain an ID")
+	}
+
+	newToken, err := a.MakeJWT(userID, refresh_token, time.Duration(claims.IssuedAt.Add(claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time)).Sub(time.Now())))
+	if err != nil {
+		return "", fmt.Errorf("Failed to create new JWT: %w", err)
+	}
+
+	return newToken, nil
 }

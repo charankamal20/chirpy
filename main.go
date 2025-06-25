@@ -282,7 +282,7 @@ func (a *apiConfig) loginHandler() http.HandlerFunc {
 			return
 		}
 
-		token, refresh_token, err := a.auth.MakeJWT(uuid.MustParse(user.ID), time.Duration(request.ExpiresInSeconds)*time.Second)
+		token, refresh_token, err := a.auth.MakeNewJWT(uuid.MustParse(user.ID), time.Duration(request.ExpiresInSeconds)*time.Second)
 
 		userDto := dto.GetUserDTOFromUser(&user, token, refresh_token)
 
@@ -298,13 +298,13 @@ func (a *apiConfig) autenticateUser(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token, err := a.auth.GetBearerToken(r.Header)
 		if err != nil {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			http.Error(w, "Token not found", http.StatusUnauthorized)
 			return
 		}
 
 		userID, err := a.auth.ValidateJWT(token)
 		if err != nil {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			http.Error(w, "Invalid token: "+err.Error(), http.StatusUnauthorized)
 			return
 		}
 
@@ -314,15 +314,34 @@ func (a *apiConfig) autenticateUser(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-
-
 func (a *apiConfig) getRefreshTokenHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		type refreshTokenRequest struct {
-			RefreshToken string `json:"refresh_token" validate:"required"`
+		type refreshTokenResponse struct {
+			Token string `json:"token" validate:"required"`
 		}
 
-		
+		token, err := a.auth.GetBearerToken(r.Header)
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		new_token, err := a.auth.RefreshToken(token)
+		if err != nil || new_token == "" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		res := &refreshTokenResponse{
+			Token: new_token,
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(res); err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
 	}
 }
 
@@ -396,6 +415,8 @@ func main() {
 	ServeMux.HandleFunc("GET /api/chirps/{chirpID}", api.getChirpHandler())
 
 	ServeMux.HandleFunc("POST /api/login", api.loginHandler())
+
+	ServeMux.HandleFunc("POST /api/refresh", api.autenticateUser(api.getRefreshTokenHandler()))
 
 	log.Println("Starting server on", port)
 	err = server.ListenAndServe()
