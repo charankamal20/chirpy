@@ -18,7 +18,8 @@ type Auth interface {
 	MakeJWT(uuid.UUID, string, time.Duration) (string, error)
 	ValidateJWT(tokenString string) (uuid.UUID, error)
 	GetBearerToken(headers http.Header) (string, error)
-	RefreshToken(token string) (string, error)
+	RefreshToken(refresh_token string) (string, error)
+	RevokeToken(refresh_token string) error
 }
 
 type AuthAdapter struct {
@@ -104,14 +105,9 @@ func (a *AuthAdapter) ValidateJWT(tokenString string) (uuid.UUID, error) {
 	return userID, nil
 }
 
-func (a *AuthAdapter) validateRefreshToken(claims jwt.RegisteredClaims) (uuid.UUID, error) {
-	refresh_token := claims.ID
-	if refresh_token == "" {
-		return uuid.Nil, fmt.Errorf("Token does not contain an ID")
-	}
-
+func (a *AuthAdapter) validateRefreshToken(refresh_token string) (uuid.UUID, error) {
 	userId, err := a.cache.GetUserIDByToken(refresh_token)
-	if err != nil || userId == "" || userId != claims.Subject {
+	if err != nil || userId == "" {
 		return uuid.Nil, fmt.Errorf("Invlaid Token: %w", err)
 	}
 
@@ -156,26 +152,24 @@ func (a *AuthAdapter) getTokenClaims(tokenString string) (jwt.RegisteredClaims, 
 }
 
 
-func (a *AuthAdapter) RefreshToken(token string) (string, error) {
-	claims, err := a.getTokenClaims(token)
-	if err != nil {
-		return "", err
-	}
-
-	userID, err := a.validateRefreshToken(claims)
+func (a *AuthAdapter) RefreshToken(refresh_token string) (string, error) {
+	userID, err := a.validateRefreshToken(refresh_token)
 	if err != nil {
 		return "", fmt.Errorf("Invalid refresh token: %w", err)
 	}
 
-	refresh_token := claims.ID
-	if refresh_token == "" {
-		return "", fmt.Errorf("Token does not contain an ID")
-	}
-
-	newToken, err := a.MakeJWT(userID, refresh_token, time.Duration(claims.IssuedAt.Add(claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time)).Sub(time.Now())))
+	newToken, err := a.MakeJWT(userID, refresh_token, time.Hour)
 	if err != nil {
 		return "", fmt.Errorf("Failed to create new JWT: %w", err)
 	}
 
 	return newToken, nil
+}
+
+func (a *AuthAdapter) RevokeToken(refresh_token string) error {
+	err := a.cache.DeleteToken(refresh_token)
+	if err != nil {
+		return fmt.Errorf("Failed to revoke token: %w", err)
+	}
+	return nil
 }

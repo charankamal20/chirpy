@@ -320,13 +320,13 @@ func (a *apiConfig) getRefreshTokenHandler() http.HandlerFunc {
 			Token string `json:"token" validate:"required"`
 		}
 
-		token, err := a.auth.GetBearerToken(r.Header)
+		refresh_token, err := a.auth.GetBearerToken(r.Header)
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
-		new_token, err := a.auth.RefreshToken(token)
+		new_token, err := a.auth.RefreshToken(refresh_token)
 		if err != nil || new_token == "" {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
@@ -342,6 +342,24 @@ func (a *apiConfig) getRefreshTokenHandler() http.HandlerFunc {
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 			return
 		}
+	}
+}
+
+func (c *apiConfig) revokeTokenHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		refresh_token, err := c.auth.GetBearerToken(r.Header)
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		err = c.auth.RevokeToken(refresh_token)
+		if err != nil {
+			http.Error(w, "Failed to revoke token", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
@@ -416,7 +434,9 @@ func main() {
 
 	ServeMux.HandleFunc("POST /api/login", api.loginHandler())
 
-	ServeMux.HandleFunc("POST /api/refresh", api.autenticateUser(api.getRefreshTokenHandler()))
+	ServeMux.HandleFunc("POST /api/refresh", api.getRefreshTokenHandler())
+
+	ServeMux.HandleFunc("POST /api/revoke", api.revokeTokenHandler())
 
 	log.Println("Starting server on", port)
 	err = server.ListenAndServe()
