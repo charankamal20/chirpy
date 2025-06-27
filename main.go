@@ -363,6 +363,43 @@ func (c *apiConfig) revokeTokenHandler() http.HandlerFunc {
 	}
 }
 
+func (c *apiConfig) updatePasswordHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		type userRequest struct {
+			Email    string `json:"email" validate:"required"`
+			Password string `json:"password" validate:"required"`
+		}
+
+		var request userRequest
+		decoder := json.NewDecoder(r.Body)
+		err := decoder.Decode(&request)
+		if err != nil || request.Email == "" || request.Password == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request"})
+			return
+		}
+
+		userID := r.Context().Value("id").(uuid.UUID)
+		newHashedPassword, err := c.auth.HashPassword(request.NewPassword)
+		if err != nil {
+			http.Error(w, "Failed to hash new password", http.StatusInternalServerError)
+			return
+		}
+
+		err = c.db.UpdateUserPassword(r.Context(), database.UpdateUserPasswordParams{
+			ID:               user.ID,
+			NewHashedPass:    newHashedPassword,
+			HadOldHashedPass: user.HashedPassword,
+		})
+		if err != nil {
+			http.Error(w, "Failed to update password", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func main() {
 	platform := os.Getenv("PLATFORM")
 	if platform == "" {
@@ -437,6 +474,8 @@ func main() {
 	ServeMux.HandleFunc("POST /api/refresh", api.getRefreshTokenHandler())
 
 	ServeMux.HandleFunc("POST /api/revoke", api.revokeTokenHandler())
+
+	ServeMux.HandleFunc("PUT /api/users", api.autenticateUser(api.updatePasswordHandler()))
 
 	log.Println("Starting server on", port)
 	err = server.ListenAndServe()
