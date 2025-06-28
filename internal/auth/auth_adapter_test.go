@@ -4,15 +4,28 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charankamal20/chirpy/internal/cache"
 	"github.com/google/uuid"
 )
 
+func getAuthAdapter() (Auth, error) {
+	cacheStore, err := cache.NewRefreshTokenCache()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewAuthAdapter("xxxxxxxxxxxxxxxxxxxxxxxxx", cacheStore), nil
+}
+
 func TestJwtSigning(t *testing.T) {
-	var adapter Auth = &AuthAdapter{}
+	adapter, err := getAuthAdapter()
+	if err != nil {
+		t.Fatalf("Failed to create Adapter: %v", err)
+	}
 
 	userId := uuid.New()
 
-	token, err := adapter.MakeJWT(userId, time.Hour*24)
+	token, _, err := adapter.MakeNewJWT(userId, time.Hour*24)
 	if err != nil {
 		t.Fatalf("Failed to create JWT: %v", err)
 	}
@@ -21,11 +34,14 @@ func TestJwtSigning(t *testing.T) {
 }
 
 func Test_ValidateToken_ValidToken(t *testing.T) {
-	var adapter Auth = &AuthAdapter{}
+	adapter, err := getAuthAdapter()
+	if err != nil {
+		t.Fatalf("Failed to create Adapter: %v", err)
+	}
 
 	userId := uuid.New()
 
-	token, err := adapter.MakeJWT(userId, time.Hour*24)
+	token, _, err := adapter.MakeNewJWT(userId, time.Hour*24)
 	if err != nil {
 		t.Fatalf("Failed to create JWT: %v", err)
 	}

@@ -14,3 +14,18 @@ DELETE FROM users;
 
 -- name: GetPassword :one
 select hashed_password from users where email = $1;
+
+
+-- name: ChangeEmailPassword :exec
+update users
+set email = $1,
+hashed_password = $2,
+updated_at = now()
+where id = $3;
+
+
+-- name: UpgradeUserToChirpy :exec
+update users
+set is_chirpy_red = true,
+updated_at = now()
+where id = $3;

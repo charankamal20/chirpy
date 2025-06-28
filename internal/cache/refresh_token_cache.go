@@ -3,7 +3,6 @@ package cache
 import (
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/tidwall/buntdb"
@@ -81,29 +80,4 @@ func initRefreshTokenCache() (*buntdb.DB, error) {
 
 	}
 	return db, nil
-}
-
-
-func main() {
-	db, err := buntdb.Open(":memory:")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-
-	// Set a key/value pair
-	err = db.Update(func(tx *buntdb.Tx) error {
-		_, _, err := tx.Set("name", "charan", nil)
-		return err
-	})
-
-	// Read a value
-	err = db.View(func(tx *buntdb.Tx) error {
-		val, err := tx.Get("name")
-		if err != nil {
-			return err
-		}
-		fmt.Println("name:", val)
-		return nil
-	})
 }

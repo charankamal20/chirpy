@@ -380,23 +380,90 @@ func (c *apiConfig) updatePasswordHandler() http.HandlerFunc {
 		}
 
 		userID := r.Context().Value("id").(uuid.UUID)
-		newHashedPassword, err := c.auth.HashPassword(request.NewPassword)
+		newHashedPassword, err := c.auth.HashPassword(request.Password)
 		if err != nil {
 			http.Error(w, "Failed to hash new password", http.StatusInternalServerError)
 			return
 		}
 
-		err = c.db.UpdateUserPassword(r.Context(), database.UpdateUserPasswordParams{
-			ID:               user.ID,
-			NewHashedPass:    newHashedPassword,
-			HadOldHashedPass: user.HashedPassword,
+		err = c.db.ChangeEmailPassword(r.Context(), database.ChangeEmailPasswordParams{
+			Email:          request.Email,
+			HashedPassword: newHashedPassword,
+			ID:             userID.String(),
 		})
 		if err != nil {
-			http.Error(w, "Failed to update password", http.StatusInternalServerError)
+			http.Error(w, "Failed to update password: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func (a *apiConfig) deleteChirpHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("chirpID")
+		if id == "" {
+			http.Error(w, "id not found", http.StatusBadRequest)
+			return
+		}
+
+		userId := (r.Context().Value("id").(uuid.UUID)).String()
+		if userId == "" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		chirp, err := a.db.GetChirp(r.Context(), id)
+		if err != nil {
+			http.Error(w, "Chirp not found", http.StatusNotFound)
+			return
+		}
+
+		if chirp.UserID != userId {
+			http.Error(w, "Author Mismatch", http.StatusForbidden)
+			return
+		}
+
+		err = a.db.DeleteChirp(r.Context(), database.DeleteChirpParams{
+			ID:     chirp.ID,
+			UserID: userId,
+		})
+		if err != nil {
+			http.Error(w, "some error occured", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func (a *apiConfig) upgradeUserHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		type dataStruct struct {
+			UserId string `json:"user_id" validate:"required"`
+		}
+
+		type eventRequest struct {
+			Event string     `json:"event" validate:"required"`
+			Data  dataStruct `json:"data" validate:"required"`
+		}
+
+		body := &eventRequest{}
+		decoder := json.NewDecoder(r.Body)
+		err := decoder.Decode(body)
+		if err != nil {
+			http.Error(w, "error parsing body", http.StatusBadRequest)
+			return
+		}
+
+		if body.Event != "user.upgraded" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		
 	}
 }
 
@@ -468,6 +535,8 @@ func main() {
 	ServeMux.HandleFunc("GET /api/chirps", api.getAllChirpsHandler())
 
 	ServeMux.HandleFunc("GET /api/chirps/{chirpID}", api.getChirpHandler())
+
+	ServeMux.HandleFunc("DELETE /api/chirps/{chirpID}", api.autenticateUser(api.deleteChirpHandler()))
 
 	ServeMux.HandleFunc("POST /api/login", api.loginHandler())
 

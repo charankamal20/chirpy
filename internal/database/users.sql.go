@@ -9,6 +9,24 @@ import (
 	"context"
 )
 
+const changeEmailPassword = `-- name: ChangeEmailPassword :exec
+update users
+set email = $1,
+hashed_password = $2
+where id = $3
+`
+
+type ChangeEmailPasswordParams struct {
+	Email          string
+	HashedPassword string
+	ID             string
+}
+
+func (q *Queries) ChangeEmailPassword(ctx context.Context, arg ChangeEmailPasswordParams) error {
+	_, err := q.db.ExecContext(ctx, changeEmailPassword, arg.Email, arg.HashedPassword, arg.ID)
+	return err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, email, hashed_password, updated_at, created_at)
 VALUES (gen_random_uuid(), $1, $2, NOW(), NOW())
