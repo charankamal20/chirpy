@@ -7,12 +7,14 @@ package database
 
 import (
 	"context"
+	"database/sql"
 )
 
 const changeEmailPassword = `-- name: ChangeEmailPassword :exec
 update users
 set email = $1,
-hashed_password = $2
+hashed_password = $2,
+updated_at = now()
 where id = $3
 `
 
@@ -30,7 +32,7 @@ func (q *Queries) ChangeEmailPassword(ctx context.Context, arg ChangeEmailPasswo
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, email, hashed_password, updated_at, created_at)
 VALUES (gen_random_uuid(), $1, $2, NOW(), NOW())
-RETURNING id, email, created_at, updated_at, hashed_password
+RETURNING id, email, created_at, updated_at, hashed_password, is_chirpy_red
 `
 
 type CreateUserParams struct {
@@ -47,6 +49,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
@@ -63,7 +66,7 @@ func (q *Queries) GetPassword(ctx context.Context, email string) (string, error)
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, created_at, updated_at, hashed_password FROM users WHERE email = $1
+SELECT id, email, created_at, updated_at, hashed_password, is_chirpy_red FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -75,6 +78,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
@@ -85,5 +89,21 @@ DELETE FROM users
 
 func (q *Queries) ResetUsersTable(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, resetUsersTable)
+	return err
+}
+
+const upgradeUserToChirpy = `-- name: UpgradeUserToChirpy :exec
+update users
+set is_chirpy_red = true,
+updated_at = now()
+where id = $1
+`
+
+func (q *Queries) UpgradeUserToChirpy(ctx context.Context, id string) error {
+	result, err := q.db.ExecContext(ctx, upgradeUserToChirpy, id)
+	if rows, err := result.RowsAffected(); rows == 0 || err != nil {
+		return sql.ErrNoRows
+	}
+
 	return err
 }

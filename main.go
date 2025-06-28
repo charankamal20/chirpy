@@ -272,7 +272,7 @@ func (a *apiConfig) loginHandler() http.HandlerFunc {
 
 		user, err := a.db.GetUserByEmail(r.Context(), request.Email)
 		if err != nil {
-			http.Error(w, "some error occured", http.StatusInternalServerError)
+			http.Error(w, "some error occured: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -459,11 +459,25 @@ func (a *apiConfig) upgradeUserHandler() http.HandlerFunc {
 		}
 
 		if body.Event != "user.upgraded" {
+			log.Println(body.Event)
+			log.Println(body.Data.UserId)
+
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
-		
+		err = a.db.UpgradeUserToChirpy(r.Context(), body.Data.UserId)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				http.Error(w, "no user found: "+err.Error(), http.StatusNotFound)
+				return
+			}
+
+			http.Error(w, "failed to upgrade: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
@@ -545,6 +559,8 @@ func main() {
 	ServeMux.HandleFunc("POST /api/revoke", api.revokeTokenHandler())
 
 	ServeMux.HandleFunc("PUT /api/users", api.autenticateUser(api.updatePasswordHandler()))
+
+	ServeMux.HandleFunc("POST /api/polka/webhooks", api.upgradeUserHandler())
 
 	log.Println("Starting server on", port)
 	err = server.ListenAndServe()
