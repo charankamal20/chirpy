@@ -26,6 +26,7 @@ type apiConfig struct {
 	db             *database.Queries
 	fileServerHits atomic.Int32
 	auth           auth.Auth
+	polka_key      string
 }
 
 func (c *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -440,7 +441,12 @@ func (a *apiConfig) deleteChirpHandler() http.HandlerFunc {
 
 func (a *apiConfig) upgradeUserHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
+		secret, err := a.GetApiKey(r.Header)
+		if secret != a.polka_key {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
 		type dataStruct struct {
 			UserId string `json:"user_id" validate:"required"`
 		}
@@ -452,7 +458,7 @@ func (a *apiConfig) upgradeUserHandler() http.HandlerFunc {
 
 		body := &eventRequest{}
 		decoder := json.NewDecoder(r.Body)
-		err := decoder.Decode(body)
+		err = decoder.Decode(body)
 		if err != nil {
 			http.Error(w, "error parsing body", http.StatusBadRequest)
 			return
@@ -481,6 +487,25 @@ func (a *apiConfig) upgradeUserHandler() http.HandlerFunc {
 	}
 }
 
+func (a *apiConfig) GetApiKey(headers http.Header) (string, error) {
+	value := headers.Get("Authorization")
+	if value == "" {
+		return "", fmt.Errorf("No Authorization")
+	}
+
+	header_val := strings.Split(value, " ")
+	if len(header_val) < 2 {
+		return "", fmt.Errorf("Invalid header value")
+	}
+
+	key := header_val[1]
+	if key == "" {
+		return "", fmt.Errorf("Empty secret value")
+	}
+
+	return key, nil
+}
+
 func main() {
 	platform := os.Getenv("PLATFORM")
 	if platform == "" {
@@ -495,6 +520,11 @@ func main() {
 	secret := os.Getenv("SECRET_KEY")
 	if secret == "" {
 		panic("SECRET environment variable is not set")
+	}
+
+	polka_key := os.Getenv("POLKA_KEY")
+	if secret == "" {
+		panic("POLKA environment variable is not set")
 	}
 
 	db, err := sql.Open("postgres", dbURL)
@@ -523,9 +553,10 @@ func main() {
 
 	auth := auth.NewAuthAdapter(secret, refresh_token_cache)
 	api := &apiConfig{
-		db:       dbqueries,
-		platform: platform,
-		auth:     auth,
+		db:        dbqueries,
+		platform:  platform,
+		auth:      auth,
+		polka_key: polka_key,
 	}
 
 	fileHandler := http.FileServer(
