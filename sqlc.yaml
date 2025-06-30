@@ -6,3 +6,11 @@ sql:
     gen:
       go:
         out: "internal/database"
+        package: "database"
+        emit_json_tags: true
+        emit_prepared_queries: true
+        emit_interface: false
+        emit_exact_table_names: false
+        overrides:
+          - db_type: "uuid"
+            go_type: "github.com/google/uuid.UUID"

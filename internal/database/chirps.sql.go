@@ -16,12 +16,12 @@ RETURNING id, user_id, body, created_at, updated_at
 `
 
 type CreateChirpParams struct {
-	UserID string
-	Body   string
+	UserID string `json:"user_id"`
+	Body   string `json:"body"`
 }
 
 func (q *Queries) CreateChirp(ctx context.Context, arg CreateChirpParams) (Chirp, error) {
-	row := q.db.QueryRowContext(ctx, createChirp, arg.UserID, arg.Body)
+	row := q.queryRow(ctx, q.createChirpStmt, createChirp, arg.UserID, arg.Body)
 	var i Chirp
 	err := row.Scan(
 		&i.ID,
@@ -40,12 +40,12 @@ and user_id = $2
 `
 
 type DeleteChirpParams struct {
-	ID     string
-	UserID string
+	ID     string `json:"id"`
+	UserID string `json:"user_id"`
 }
 
 func (q *Queries) DeleteChirp(ctx context.Context, arg DeleteChirpParams) error {
-	_, err := q.db.ExecContext(ctx, deleteChirp, arg.ID, arg.UserID)
+	_, err := q.exec(ctx, q.deleteChirpStmt, deleteChirp, arg.ID, arg.UserID)
 	return err
 }
 
@@ -54,7 +54,7 @@ SELECT id, user_id, body, created_at, updated_at FROM chirps
 `
 
 func (q *Queries) GetAllChirps(ctx context.Context) ([]Chirp, error) {
-	rows, err := q.db.QueryContext(ctx, getAllChirps)
+	rows, err := q.query(ctx, q.getAllChirpsStmt, getAllChirps)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ SELECT id, user_id, body, created_at, updated_at FROM chirps WHERE id = $1
 `
 
 func (q *Queries) GetChirp(ctx context.Context, id string) (Chirp, error) {
-	row := q.db.QueryRowContext(ctx, getChirp, id)
+	row := q.queryRow(ctx, q.getChirpStmt, getChirp, id)
 	var i Chirp
 	err := row.Scan(
 		&i.ID,

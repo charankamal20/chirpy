@@ -7,6 +7,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"fmt"
 )
 
 type DBTX interface {
@@ -20,12 +21,158 @@ func New(db DBTX) *Queries {
 	return &Queries{db: db}
 }
 
+func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
+	q := Queries{db: db}
+	var err error
+	if q.changeEmailPasswordStmt, err = db.PrepareContext(ctx, changeEmailPassword); err != nil {
+		return nil, fmt.Errorf("error preparing query ChangeEmailPassword: %w", err)
+	}
+	if q.createChirpStmt, err = db.PrepareContext(ctx, createChirp); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateChirp: %w", err)
+	}
+	if q.createUserStmt, err = db.PrepareContext(ctx, createUser); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateUser: %w", err)
+	}
+	if q.deleteChirpStmt, err = db.PrepareContext(ctx, deleteChirp); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteChirp: %w", err)
+	}
+	if q.getAllChirpsStmt, err = db.PrepareContext(ctx, getAllChirps); err != nil {
+		return nil, fmt.Errorf("error preparing query GetAllChirps: %w", err)
+	}
+	if q.getChirpStmt, err = db.PrepareContext(ctx, getChirp); err != nil {
+		return nil, fmt.Errorf("error preparing query GetChirp: %w", err)
+	}
+	if q.getPasswordStmt, err = db.PrepareContext(ctx, getPassword); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPassword: %w", err)
+	}
+	if q.getUserByEmailStmt, err = db.PrepareContext(ctx, getUserByEmail); err != nil {
+		return nil, fmt.Errorf("error preparing query GetUserByEmail: %w", err)
+	}
+	if q.resetUsersTableStmt, err = db.PrepareContext(ctx, resetUsersTable); err != nil {
+		return nil, fmt.Errorf("error preparing query ResetUsersTable: %w", err)
+	}
+	if q.upgradeUserToChirpyStmt, err = db.PrepareContext(ctx, upgradeUserToChirpy); err != nil {
+		return nil, fmt.Errorf("error preparing query UpgradeUserToChirpy: %w", err)
+	}
+	return &q, nil
+}
+
+func (q *Queries) Close() error {
+	var err error
+	if q.changeEmailPasswordStmt != nil {
+		if cerr := q.changeEmailPasswordStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing changeEmailPasswordStmt: %w", cerr)
+		}
+	}
+	if q.createChirpStmt != nil {
+		if cerr := q.createChirpStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createChirpStmt: %w", cerr)
+		}
+	}
+	if q.createUserStmt != nil {
+		if cerr := q.createUserStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createUserStmt: %w", cerr)
+		}
+	}
+	if q.deleteChirpStmt != nil {
+		if cerr := q.deleteChirpStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteChirpStmt: %w", cerr)
+		}
+	}
+	if q.getAllChirpsStmt != nil {
+		if cerr := q.getAllChirpsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getAllChirpsStmt: %w", cerr)
+		}
+	}
+	if q.getChirpStmt != nil {
+		if cerr := q.getChirpStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getChirpStmt: %w", cerr)
+		}
+	}
+	if q.getPasswordStmt != nil {
+		if cerr := q.getPasswordStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPasswordStmt: %w", cerr)
+		}
+	}
+	if q.getUserByEmailStmt != nil {
+		if cerr := q.getUserByEmailStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getUserByEmailStmt: %w", cerr)
+		}
+	}
+	if q.resetUsersTableStmt != nil {
+		if cerr := q.resetUsersTableStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing resetUsersTableStmt: %w", cerr)
+		}
+	}
+	if q.upgradeUserToChirpyStmt != nil {
+		if cerr := q.upgradeUserToChirpyStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upgradeUserToChirpyStmt: %w", cerr)
+		}
+	}
+	return err
+}
+
+func (q *Queries) exec(ctx context.Context, stmt *sql.Stmt, query string, args ...interface{}) (sql.Result, error) {
+	switch {
+	case stmt != nil && q.tx != nil:
+		return q.tx.StmtContext(ctx, stmt).ExecContext(ctx, args...)
+	case stmt != nil:
+		return stmt.ExecContext(ctx, args...)
+	default:
+		return q.db.ExecContext(ctx, query, args...)
+	}
+}
+
+func (q *Queries) query(ctx context.Context, stmt *sql.Stmt, query string, args ...interface{}) (*sql.Rows, error) {
+	switch {
+	case stmt != nil && q.tx != nil:
+		return q.tx.StmtContext(ctx, stmt).QueryContext(ctx, args...)
+	case stmt != nil:
+		return stmt.QueryContext(ctx, args...)
+	default:
+		return q.db.QueryContext(ctx, query, args...)
+	}
+}
+
+func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, args ...interface{}) *sql.Row {
+	switch {
+	case stmt != nil && q.tx != nil:
+		return q.tx.StmtContext(ctx, stmt).QueryRowContext(ctx, args...)
+	case stmt != nil:
+		return stmt.QueryRowContext(ctx, args...)
+	default:
+		return q.db.QueryRowContext(ctx, query, args...)
+	}
+}
+
 type Queries struct {
-	db DBTX
+	db                      DBTX
+	tx                      *sql.Tx
+	changeEmailPasswordStmt *sql.Stmt
+	createChirpStmt         *sql.Stmt
+	createUserStmt          *sql.Stmt
+	deleteChirpStmt         *sql.Stmt
+	getAllChirpsStmt        *sql.Stmt
+	getChirpStmt            *sql.Stmt
+	getPasswordStmt         *sql.Stmt
+	getUserByEmailStmt      *sql.Stmt
+	resetUsersTableStmt     *sql.Stmt
+	upgradeUserToChirpyStmt *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db: tx,
+		db:                      tx,
+		tx:                      tx,
+		changeEmailPasswordStmt: q.changeEmailPasswordStmt,
+		createChirpStmt:         q.createChirpStmt,
+		createUserStmt:          q.createUserStmt,
+		deleteChirpStmt:         q.deleteChirpStmt,
+		getAllChirpsStmt:        q.getAllChirpsStmt,
+		getChirpStmt:            q.getChirpStmt,
+		getPasswordStmt:         q.getPasswordStmt,
+		getUserByEmailStmt:      q.getUserByEmailStmt,
+		resetUsersTableStmt:     q.resetUsersTableStmt,
+		upgradeUserToChirpyStmt: q.upgradeUserToChirpyStmt,
 	}
 }

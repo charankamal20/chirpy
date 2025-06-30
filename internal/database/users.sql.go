@@ -7,7 +7,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
 )
 
 const changeEmailPassword = `-- name: ChangeEmailPassword :exec
@@ -19,13 +18,13 @@ where id = $3
 `
 
 type ChangeEmailPasswordParams struct {
-	Email          string
-	HashedPassword string
-	ID             string
+	Email          string `json:"email"`
+	HashedPassword string `json:"hashed_password"`
+	ID             string `json:"id"`
 }
 
 func (q *Queries) ChangeEmailPassword(ctx context.Context, arg ChangeEmailPasswordParams) error {
-	_, err := q.db.ExecContext(ctx, changeEmailPassword, arg.Email, arg.HashedPassword, arg.ID)
+	_, err := q.exec(ctx, q.changeEmailPasswordStmt, changeEmailPassword, arg.Email, arg.HashedPassword, arg.ID)
 	return err
 }
 
@@ -36,12 +35,12 @@ RETURNING id, email, created_at, updated_at, hashed_password, is_chirpy_red
 `
 
 type CreateUserParams struct {
-	Email          string
-	HashedPassword string
+	Email          string `json:"email"`
+	HashedPassword string `json:"hashed_password"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRowContext(ctx, createUser, arg.Email, arg.HashedPassword)
+	row := q.queryRow(ctx, q.createUserStmt, createUser, arg.Email, arg.HashedPassword)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -59,7 +58,7 @@ select hashed_password from users where email = $1
 `
 
 func (q *Queries) GetPassword(ctx context.Context, email string) (string, error) {
-	row := q.db.QueryRowContext(ctx, getPassword, email)
+	row := q.queryRow(ctx, q.getPasswordStmt, getPassword, email)
 	var hashed_password string
 	err := row.Scan(&hashed_password)
 	return hashed_password, err
@@ -70,7 +69,7 @@ SELECT id, email, created_at, updated_at, hashed_password, is_chirpy_red FROM us
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
-	row := q.db.QueryRowContext(ctx, getUserByEmail, email)
+	row := q.queryRow(ctx, q.getUserByEmailStmt, getUserByEmail, email)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -88,7 +87,7 @@ DELETE FROM users
 `
 
 func (q *Queries) ResetUsersTable(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, resetUsersTable)
+	_, err := q.exec(ctx, q.resetUsersTableStmt, resetUsersTable)
 	return err
 }
 
@@ -100,10 +99,6 @@ where id = $1
 `
 
 func (q *Queries) UpgradeUserToChirpy(ctx context.Context, id string) error {
-	result, err := q.db.ExecContext(ctx, upgradeUserToChirpy, id)
-	if rows, err := result.RowsAffected(); rows == 0 || err != nil {
-		return sql.ErrNoRows
-	}
-
+	_, err := q.exec(ctx, q.upgradeUserToChirpyStmt, upgradeUserToChirpy, id)
 	return err
 }

@@ -9,18 +9,18 @@ import (
 )
 
 type Chirp struct {
-	ID        string
-	UserID    string
-	Body      string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type User struct {
-	ID             string
-	Email          string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	HashedPassword string
-	IsChirpyRed    bool
+	ID             string    `json:"id"`
+	Email          string    `json:"email"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	HashedPassword string    `json:"hashed_password"`
+	IsChirpyRed    bool      `json:"is_chirpy_red"`
 }
