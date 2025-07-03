@@ -1,3 +1,9 @@
+// @title Chirpy
+// @version 1.0
+// @description This is a simple API server.
+// @host localhost:8080
+// @BasePath /app
+
 package main
 
 import (
@@ -11,6 +17,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	_ "github.com/charankamal20/chirpy/docs" // replace with your actual module
+	httpSwagger "github.com/swaggo/http-swagger"
 
 	"github.com/charankamal20/chirpy/internal/auth"
 	"github.com/charankamal20/chirpy/internal/cache"
@@ -565,6 +574,15 @@ func main() {
 
 	ServeMux.Handle("/app/", http.StripPrefix("/app/", api.middlewareMetricsInc(fileHandler)))
 
+	ServeMux.Handle("/swagger/", httpSwagger.WrapHandler)
+
+	// @Summary      Ping
+	// @Description  Responds with pong
+	// @Tags         health
+	// @Accept       json
+	// @Produce      json
+	// @Success      200 {string} string "pong"
+	// @Router       /ping [get]
 	ServeMux.HandleFunc("GET /api/healthz", healthCheckHandler())
 
 	ServeMux.HandleFunc("GET /admin/metrics", api.getFileServerHitsHandler())
