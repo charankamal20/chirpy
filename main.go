@@ -46,6 +46,13 @@ func (c *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	})
 }
 
+// @Summary      Health Check
+// @Description  Responds with OK
+// @Tags         Health
+// @Accept       json
+// @Produce      json
+// @Success      200 {string} string "OK"
+// @Router       /api/healthz [get]
 func healthCheckHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -141,12 +148,22 @@ func (c *apiConfig) getUserFromEmailHandler() http.HandlerFunc {
 	}
 }
 
+type userRequest struct {
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required"`
+}
+
+// @Summary      Create User
+// @Description  Registers a new user with email and password
+// @Tags         Users
+// @Accept       json
+// @Produce      json
+// @Param        user  body  userRequest  true  "User credentials"
+// @Success      201  {object}  dto.UserDTO
+// @Failure      400  {object}  map[string]string
+// @Router       /api/users [post]
 func (c *apiConfig) createUserHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		type userRequest struct {
-			Email    string `json:"email" validate:"required,email"`
-			Password string `json:"password" validate:"required"`
-		}
 
 		var request userRequest
 		decoder := json.NewDecoder(r.Body)
@@ -259,6 +276,14 @@ func (c *apiConfig) getChirpHandler() http.HandlerFunc {
 	}
 }
 
+// @Summary      Login User
+// @Description  Authenticates user and returns JWT
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  dto.UserDTO
+// @Failure      401  {object}  map[string]string
+// @Router       /api/login [post]
 func (a *apiConfig) loginHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		type userRequest struct {
